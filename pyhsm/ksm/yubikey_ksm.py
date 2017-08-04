@@ -223,11 +223,14 @@ class SQLBackend(object):
                 & self.aead_table.c.keyhandle.in_([kh[1] for kh in self.key_handles]))
             result = connection.execute(s)
 
-            for row in result:
-                kh_int = row['keyhandle']
-                aead = pyhsm.aead_cmd.YHSM_GeneratedAEAD(None, kh_int, '')
-                aead.data = row['aead']
-                aead.nonce = row['nonce']
+            row = next(result)
+            if not row['active']:
+                raise Exception('Key is disabled')
+
+            kh_int = row['keyhandle']
+            aead = pyhsm.aead_cmd.YHSM_GeneratedAEAD(None, kh_int, '')
+            aead.data = row['aead']
+            aead.nonce = row['nonce']
             return aead
         except Exception as e:
             trans.rollback()
