@@ -68,6 +68,12 @@ stats = { 'ok': 0,
 context = daemon.DaemonContext()
 
 
+class DisabledKeyError(Exception):
+    """
+    The requested AEAD is marked as not active.
+    """
+
+
 class YHSM_KSMRequestHandler(BaseHTTPServer.BaseHTTPRequestHandler):
     """
     Handle a HTTP request.
@@ -139,6 +145,9 @@ class YHSM_KSMRequestHandler(BaseHTTPServer.BaseHTTPRequestHandler):
             aead = self.aead_backend.load_aead(public_id)
         except Exception as e:
             self.log_error(str(e))
+            if isinstance(e, DisabledKeyError):
+                return "ERR Disabled public_id"
+
             if self.stats_url:
                 stats['no_aead'] += 1
             return "ERR Unknown public_id"
@@ -225,13 +234,17 @@ class SQLBackend(object):
 
             row = next(result)
             if not row['active']:
-                raise Exception('Key is disabled')
+                raise DisabledKeyError('AEAD for public_id %s is disabled' % public_id)
 
             kh_int = row['keyhandle']
             aead = pyhsm.aead_cmd.YHSM_GeneratedAEAD(None, kh_int, '')
             aead.data = row['aead']
             aead.nonce = row['nonce']
             return aead
+
+        except DisabledKeyError as e:
+            trans.rollback()
+            raise e
         except Exception as e:
             trans.rollback()
             raise Exception("No AEAD in DB for public_id %s (%s)" % (public_id, str(e)))
