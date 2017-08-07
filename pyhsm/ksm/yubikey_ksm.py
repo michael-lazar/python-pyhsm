@@ -224,7 +224,7 @@ class SQLBackend(object):
     def load_aead(self, public_id):
         """ Loads AEAD from the specified database. """
         connection = self.engine.connect()
-        trans = connection.begin()
+        connection.begin()
 
         try:
             s = sqlalchemy.select([self.aead_table]).where(
@@ -232,7 +232,10 @@ class SQLBackend(object):
                 & self.aead_table.c.keyhandle.in_([kh[1] for kh in self.key_handles]))
             result = connection.execute(s)
 
-            row = next(result)
+            row = result.first()
+            if not row:
+                raise Exception("No AEAD in DB for public_id %s" % public_id)
+
             if not row['active']:
                 raise DisabledKeyError('AEAD for public_id %s is disabled' % public_id)
 
@@ -242,12 +245,6 @@ class SQLBackend(object):
             aead.nonce = row['nonce']
             return aead
 
-        except DisabledKeyError as e:
-            trans.rollback()
-            raise e
-        except Exception as e:
-            trans.rollback()
-            raise Exception("No AEAD in DB for public_id %s (%s)" % (public_id, str(e)))
         finally:
             connection.close()
 
